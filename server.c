@@ -135,21 +135,37 @@ int CreateUDPServerSocket ( unsigned short port ) {
 }
 
 int SendByTime (int servSock,  struct sockaddr_in ClntAddr, int CurrId, ClntOpt myOpt){
-    int timePass=0; 
-    while(1){
-        if (myOpt.interval1[CurrId-1] <= myOpt.interval2[CurrId-1]-timePass){
+    int child_pid;
+    if ((child_pid = fork()) == -1)
+        DieWithError("fork error\n");
+    else if (child_pid == 0) {
+        // в потомке отсылаем периодические уведомления
+        while (1){
             sleep(myOpt.interval1[CurrId-1]);
             if (( sendto (servSock, myOpt.msg1[CurrId-1], strlen(myOpt.msg1[CurrId-1])+1, 0, (struct sockaddr *) &ClntAddr, sizeof(ClntAddr)) <0))
-                DieWithError("send() failed");
-            timePass += myOpt.interval1[CurrId-1];
-            TRACE ( printf("Отправлено клиенту ID = %d, уведомление: %s\n", CurrId,  myOpt.msg1[CurrId-1]));
-        } else {
-            sleep(myOpt.interval2[CurrId-1]-timePass);
-            if (( sendto (servSock, myOpt.msg2[CurrId-1], strlen(myOpt.msg2[CurrId-1])+1, 0, (struct sockaddr *) &ClntAddr, sizeof(ClntAddr)) <0))
-                DieWithError("send() failed");
-            timePass = 0;
-            TRACE ( printf("Отправлено клиенту ID = %d, уведомление: %s\n", CurrId,  myOpt.msg2[CurrId-1]));
+                DieWithError("send() failed"); 
+             TRACE ( printf("Отправлено клиенту ID = %d, уведомление: %s\n", CurrId,  myOpt.msg1[CurrId-1]));
         }
+    }
+    // в родителе отсылаем уведомления по времени
+    time_t now;
+    time(&now);
+ 
+    struct tm beg;
+    beg = *localtime(&now);
+    beg.tm_hour = myOpt.interval2[CurrId-1];
+    double seconds = difftime(mktime(&beg), now);
+    sleep(seconds);
+
+    if (( sendto (servSock, myOpt.msg2[CurrId-1], strlen(myOpt.msg2[CurrId-1])+1, 0, (struct sockaddr *) &ClntAddr, sizeof(ClntAddr)) <0))
+                DieWithError("send() failed");
+    TRACE ( printf("Отправлено клиенту ID = %d, уведомление: %s\n", CurrId,  myOpt.msg2[CurrId-1]));
+
+    while(1){
+        sleep(86400); // спит сутки
+        if (( sendto (servSock, myOpt.msg2[CurrId-1], strlen(myOpt.msg2[CurrId-1])+1, 0, (struct sockaddr *) &ClntAddr, sizeof(ClntAddr)) <0))
+                DieWithError("send() failed");
+        TRACE ( printf("Отправлено клиенту ID = %d, уведомление: %s\n", CurrId,  myOpt.msg2[CurrId-1]));
     }
     return 0;
 }
